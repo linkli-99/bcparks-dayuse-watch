@@ -1,0 +1,17 @@
+{
+  "name": "bcparks-watch-trigger",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare cron trigger for the BC Parks GitHub Actions monitor.",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "test": "node --test src/index.test.js",
+    "test-cron": "wrangler dev --test-scheduled",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "4.68.1"
+  }
+}

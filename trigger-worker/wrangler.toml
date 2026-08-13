@@ -1,0 +1,14 @@
+name = "bcparks-watch-trigger"
+main = "src/index.js"
+compatibility_date = "2026-08-13"
+
+# Cloudflare is the primary timer and dispatches the GitHub workflow every two minutes.
+[triggers]
+crons = ["*/2 * * * *"]
+
+# Change these values if the repository owner, name, workflow, or default branch differs.
+[vars]
+GH_OWNER = "linkli-99"
+GH_REPO = "bcparks-dayuse-watch"
+GH_WORKFLOW = "bcparks-monitor.yml"
+GH_REF = "main"

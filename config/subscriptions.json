@@ -1,0 +1,24 @@
+{
+  "visit_date": "2026-08-15",
+  "stop_after_local_time": "23:59",
+  "subscriptions": [
+    {
+      "enabled": true,
+      "label": "Garibaldi - Rubble Creek parking",
+      "park_id": "0007",
+      "facility": "Rubble Creek",
+      "slot": "DAY",
+      "booking_url": "https://reserve.bcparks.ca/dayuse/",
+      "park_url": "https://bcparks.ca/garibaldi-park/"
+    },
+    {
+      "enabled": false,
+      "label": "Joffre Lakes trail passes",
+      "park_id": "0363",
+      "facility": "Joffre Lakes",
+      "slot": "DAY",
+      "booking_url": "https://reserve.bcparks.ca/dayuse/",
+      "park_url": "https://bcparks.ca/joffre-lakes-park/"
+    }
+  ]
+}

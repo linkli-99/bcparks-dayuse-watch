@@ -1,0 +1,89 @@
+name: BC Parks availability monitor
+
+on:
+  schedule:
+    # Thirty-minute fallback, offset from Cloudflare's primary */2 trigger.
+    # GitHub cannot schedule every two minutes, and a second high-frequency timer
+    # would unnecessarily increase the BC Parks request rate.
+    - cron: "2,32 * * * *"
+  workflow_dispatch:
+    inputs:
+      send_test:
+        description: Send an ntfy test notification without checking BC Parks
+        type: boolean
+        default: false
+      force_check:
+        description: Ignore the release/cutoff window for this manual run
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bcparks-day-use-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      # Optional override. If unset, config/subscriptions.json supplies the date.
+      BCPARKS_VISIT_DATE: ${{ vars.BCPARKS_VISIT_DATE }}
+      BCPARKS_SUBSCRIPTIONS_FILE: config/subscriptions.json
+      BCPARKS_STATE_FILE: state.json
+      BCPARKS_TEST_NOTIFICATION: ${{ inputs.send_test == true && '1' || '' }}
+      BCPARKS_FORCE_CHECK: ${{ inputs.force_check == true && '1' || '' }}
+      NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+      NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
+      NTFY_SERVER: ${{ vars.NTFY_SERVER }}
+    steps:
+      - name: Check out monitor
+        uses: actions/checkout@v5
+
+      - name: Validate notification configuration
+        run: |
+          if [ -z "$NTFY_TOPIC" ]; then
+            echo "Missing required Actions secret: NTFY_TOPIC" >&2
+            exit 1
+          fi
+
+      - name: Check availability
+        id: availability
+        run: python3 scripts/check_availability.py
+
+      - name: Persist notification state
+        if: ${{ !cancelled() && inputs.send_test != true }}
+        run: |
+          if ! git diff --quiet -- state.json; then
+            git config user.name 'bcparks-watch-bot'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add state.json
+            git commit -m 'chore: update notification state [skip ci]'
+            git push
+          else
+            echo 'No notification-state change.'
+          fi
+
+      - name: Add run summary
+        if: always()
+        env:
+          STATUS: ${{ steps.availability.outputs.status }}
+          AVAILABLE: ${{ steps.availability.outputs.available }}
+          AVAILABLE_COUNT: ${{ steps.availability.outputs.available_count }}
+          CHECKED_COUNT: ${{ steps.availability.outputs.checked_count }}
+          ERROR_COUNT: ${{ steps.availability.outputs.error_count }}
+          RESULTS_JSON: ${{ steps.availability.outputs.results_json }}
+        run: |
+          {
+            echo "## BC Parks monitor"
+            echo "- Status: ${STATUS:-error}"
+            echo "- Available: ${AVAILABLE:-false}"
+            echo "- Available locations: ${AVAILABLE_COUNT:-0}"
+            echo "- Checked locations: ${CHECKED_COUNT:-0}"
+            echo "- Errors: ${ERROR_COUNT:-0}"
+            echo '```json'
+            echo "${RESULTS_JSON:-[]}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
