@@ -1,11 +1,6 @@
 name: BC Parks availability monitor
 
 on:
-  schedule:
-    # Thirty-minute fallback, offset from Cloudflare's primary */2 trigger.
-    # GitHub cannot schedule every two minutes, and a second high-frequency timer
-    # would unnecessarily increase the BC Parks request rate.
-    - cron: "2,32 * * * *"
   workflow_dispatch:
     inputs:
       send_test:

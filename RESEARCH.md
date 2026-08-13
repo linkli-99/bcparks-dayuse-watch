@@ -48,6 +48,8 @@ The frontend and backend are public source code:
 
 A raw request without same-site request context returned the Angular application's `200 text/html` fallback, not JSON. Supplying the registration page as `Referer` returned JSON. This constraint is not an API contract and may change. The monitor validates the content type and schema so that a routing or access-policy change fails closed instead of producing a false alert.
 
+The first deployed GitHub Actions run also received `200 text/html` from a U.S. hosted runner even with the same-site `Referer`. Cloudflare Smart Placement received `application/json` for the identical facility and reservation requests. The production design therefore performs the read at the Cloudflare edge and passes only the matching facility fields and reservation response to GitHub for independent schema validation. The direct GitHub cron was removed because it was not a working fallback.
+
 ## How booking works
 
 1. The registration page fetches the park's facilities.
@@ -105,9 +107,10 @@ The following checks were completed against production without holding inventory
 - Multi-location integration run: one monitor invocation checked both enabled subscriptions and reported Rubble Creek and Joffre Lakes independently as `full`, with no transport or schema error.
 - Repeated live probe: five of five end-to-end monitor runs returned valid JSON and the same `Full/max:0` result; zero transport, schema, or parsing failures occurred.
 - Access-path negative test: omitting same-site `Referer`/`Origin` returned `200 text/html`; the monitor rejects it.
-- Seventeen offline Python tests cover multi-location shared-date configuration, safe notification links, rejection of per-location dates, enable/disable behavior, the exact local-time cutoff, valid JSON, HTML fallback, network retry, full, available, contradictory response signals, Rubble Creek weekday rules, ntfy actions, transition deduplication, dry-run behavior, and stale-state pruning.
-- Five offline Worker tests cover the exact GitHub dispatch URL/body, missing configuration, GitHub API errors, the non-dispatching health endpoint, and the exact two-minute cron setting.
-- `wrangler 4.68.1 deploy --dry-run` successfully parsed the Worker module and `wrangler.toml` deployment configuration.
+- Twenty offline Python tests cover multi-location shared-date configuration, Cloudflare payload validation, safe notification links, rejection of per-location dates, enable/disable behavior, the exact local-time cutoff, valid JSON, HTML fallback, network retry, full, available, contradictory response signals, Rubble Creek weekday rules, ntfy actions, transition deduplication, dry-run behavior, and stale-state pruning.
+- Eight offline Worker tests cover edge prefetching, same-site request headers, disabled locations, the Pacific cutoff, the exact GitHub dispatch input, missing configuration, GitHub API errors, the non-dispatching health endpoint, Smart Placement, and the exact two-minute cron setting.
+- `wrangler 4.68.1 deploy --dry-run` successfully parsed the Worker module, Smart Placement, and `wrangler.toml` deployment configuration.
+- Deployed Cloudflare cron run `#5` prefetched the production JSON at `2026-08-13T18:24:21Z`; GitHub independently validated Rubble Creek as `Full/max:0` and completed successfully.
 - Network cutoff integration test: with a deliberately unreachable API base, a same-day configuration whose stop time had passed exited successfully with `no request sent`. This verifies the cutoff occurs before any endpoint access.
 - Live browser link test: opening `https://reserve.bcparks.ca/dayuse/registration` directly redirected to `https://reserve.bcparks.ca/dayuse/`. The frontend source confirms that the registration page requires in-memory router state, so there is no stable park-selected booking deep link.
 

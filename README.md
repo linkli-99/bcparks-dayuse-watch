@@ -1,6 +1,6 @@
 # BC Parks multi-location availability monitor
 
-This is a read-only cancellation monitor for one target date and one or more BC Parks locations. Cloudflare triggers it every two minutes, GitHub Actions checks the public availability data, and ntfy sends a push when a cancellation appears. It never holds or books a pass.
+This is a read-only cancellation monitor for one target date and one or more BC Parks locations. A smart-placed Cloudflare Worker checks the public availability data every two minutes, GitHub Actions validates the response and tracks alert state, and ntfy sends a push when a cancellation appears. It never holds or books a pass.
 
 The supplied configuration monitors Garibaldi's Rubble Creek parking for August 15, 2026. Joffre Lakes is included but disabled and can be enabled without changing the code.
 
@@ -8,14 +8,14 @@ The supplied configuration monitors Garibaldi's Rubble Creek parking for August 
 
 ```text
 Cloudflare Cron Trigger (every 2 minutes)
-  -> GitHub workflow_dispatch
-  -> scripts/check_availability.py
   -> BC Parks read-only availability GET
+  -> GitHub workflow_dispatch with the response
+  -> scripts/check_availability.py validation
   -> ntfy alert when Full changes to Available
   -> state.json commit only when notification state changes
 ```
 
-The GitHub workflow also has an offset thirty-minute schedule as a best-effort fallback. Keeping the fallback at five minutes would double the normal BC Parks request rate. Its concurrency group prevents overlapping checks.
+The BC Parks origin returned its SPA HTML fallback to a U.S. GitHub-hosted runner during deployment testing. The Worker therefore performs the read with Cloudflare Smart Placement and passes the JSON into the workflow. GitHub's own cron is intentionally disabled because it cannot perform a reliable direct read from that runner region. The workflow concurrency group prevents overlapping checks.
 
 ## Configure the date and locations
 
@@ -51,7 +51,7 @@ Edit `config/subscriptions.json`:
 - Every enabled location uses the single top-level `visit_date`; per-location dates are rejected.
 - Set `enabled` to subscribe or unsubscribe from a location.
 - `stop_after_local_time` is Pacific time. No BC Parks request is made after this time on the target date.
-- The GitHub repository variable `BCPARKS_VISIT_DATE` can override the file date without a commit.
+- Change the shared date in this file and commit it; the Worker reads this canonical configuration before each check.
 - `booking_url` becomes the notification's main tap target and **Book now** action.
 - `park_url` becomes a secondary **Park details** action.
 
@@ -86,7 +86,6 @@ In **Settings → Secrets and variables → Actions** configure:
 | Secret | `NTFY_TOPIC` | Yes | A random, unguessable 8–64 character ntfy topic |
 | Secret | `NTFY_TOKEN` | No | Token for an authenticated/self-hosted ntfy server |
 | Variable | `NTFY_SERVER` | No | Defaults to `https://ntfy.sh` |
-| Variable | `BCPARKS_VISIT_DATE` | No | `YYYY-MM-DD`; overrides the JSON date |
 
 The workflow requests `contents: write` only so it can commit `state.json`. It writes state only when an alert is sent, availability closes and rearms the alert, or the configured date/locations make an old state entry obsolete.
 
@@ -115,7 +114,7 @@ npm run deploy
 npm run tail
 ```
 
-Within two minutes, GitHub Actions should show a run whose event is `workflow_dispatch`. See `trigger-worker/README.md` for verification details.
+Within two minutes, GitHub Actions should show a successful run whose event is `workflow_dispatch`. See `trigger-worker/README.md` for verification details.
 
 ## Test locally
 

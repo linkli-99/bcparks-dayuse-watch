@@ -1,6 +1,6 @@
 # Cloudflare two-minute trigger
 
-This Worker is the primary timer for the BC Parks monitor. A Cloudflare Cron Trigger runs every two minutes and calls GitHub's `workflow_dispatch` endpoint for `.github/workflows/bcparks-monitor.yml`. The availability check and ntfy notification still run inside GitHub Actions.
+This Worker is the timer and read-only data collector for the BC Parks monitor. Every two minutes it reads the canonical subscription file, stops outside the configured Pacific-time window, fetches BC Parks through Cloudflare Smart Placement, and sends the JSON to `.github/workflows/bcparks-monitor.yml`. GitHub validates availability, tracks alert state, and publishes ntfy notifications.
 
 ## Configure
 
@@ -24,8 +24,8 @@ Wrangler is pinned to `4.68.1`, the version used for the package's successful dr
 npm run tail
 ```
 
-- The deployed Worker URL returns `{"service":"bcparks-watch-trigger","status":"ok"}`. This verifies that the Worker is deployed, but it does not validate the GitHub token.
+- The deployed Worker URL returns `{"service":"bcparks-watch-trigger","status":"ok"}`. This verifies that the Worker is deployed, but it does not perform a BC Parks request.
 - Confirm that GitHub Actions shows a new `workflow_dispatch` run within two minutes.
 - Run `npm run test-cron`, open the printed `/__scheduled` URL once, and confirm a GitHub run appears.
 
-The GitHub workflow also contains an offset thirty-minute schedule as a best-effort fallback. Its concurrency group serializes duplicate triggers.
+The GitHub workflow does not use its own cron: deployment testing proved that the U.S. hosted runner receives HTML instead of the public JSON. Its concurrency group still serializes duplicate Worker triggers.

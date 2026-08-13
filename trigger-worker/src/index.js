@@ -116,7 +116,19 @@ export async function prefetchAvailability(env, fetchImpl = fetch, now = new Dat
     });
     try {
       const reservation = await fetchJson(`${API_BASE}/reservation?${query}`, fetchImpl, headers);
-      locations.push({ ...subscription, facilities: facilities.payload, reservation });
+      const selectedFacilities = Array.isArray(facilities.payload)
+        ? facilities.payload.filter((item) => item?.name === subscription.facility).map((item) => ({
+            name: item.name,
+            visible: item.visible,
+            status: item.status,
+            bookingTimes: item.bookingTimes,
+            bookingDays: item.bookingDays,
+            bookableHolidays: item.bookableHolidays,
+            bookingDaysAhead: item.bookingDaysAhead,
+            bookingOpeningHour: item.bookingOpeningHour,
+          }))
+        : facilities.payload;
+      locations.push({ ...subscription, facilities: selectedFacilities, reservation });
     } catch (error) {
       locations.push({ ...subscription, error: `reservation request: ${String(error?.message || error)}` });
     }
