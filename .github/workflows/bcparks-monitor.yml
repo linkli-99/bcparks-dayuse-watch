@@ -16,6 +16,11 @@ on:
         description: Ignore the release/cutoff window for this manual run
         type: boolean
         default: false
+      availability_payload:
+        description: Internal JSON prefetched by the Cloudflare Worker
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -29,10 +34,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     env:
-      # Optional override. If unset, config/subscriptions.json supplies the date.
-      BCPARKS_VISIT_DATE: ${{ vars.BCPARKS_VISIT_DATE }}
       BCPARKS_SUBSCRIPTIONS_FILE: config/subscriptions.json
       BCPARKS_STATE_FILE: state.json
+      BCPARKS_PREFETCHED_RESULTS: ${{ inputs.availability_payload }}
       BCPARKS_TEST_NOTIFICATION: ${{ inputs.send_test == true && '1' || '' }}
       BCPARKS_FORCE_CHECK: ${{ inputs.force_check == true && '1' || '' }}
       NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}

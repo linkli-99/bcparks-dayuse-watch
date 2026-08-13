@@ -438,6 +438,7 @@ def process_subscription(
     now: datetime,
     force_check: bool,
     state: dict[str, Any],
+    reservation_payload: Any | None = None,
 ) -> dict[str, Any]:
     facility = find_facility(facilities_payload, subscription.facility)
     if subscription.slot not in facility.get("bookingTimes", {}):
@@ -451,7 +452,11 @@ def process_subscription(
     query = urlencode(
         {"park": subscription.park_id, "facility": subscription.facility, "date": config.visit_date.isoformat()}
     )
-    payload = fetch_json(f"{API_BASE}/reservation?{query}")
+    payload = (
+        reservation_payload
+        if reservation_payload is not None
+        else fetch_json(f"{API_BASE}/reservation?{query}")
+    )
     availability = parse_availability(payload, config.visit_date, subscription.slot)
     notification, state_changed = update_notification_state(
         availability, subscription, config.visit_date, state
@@ -464,6 +469,32 @@ def process_subscription(
         "notification": notification,
         "_state_changed": state_changed,
     }
+
+
+def load_prefetched_results(raw: str, config: MonitorConfig) -> dict[tuple[str, str], dict[str, Any]] | None:
+    """Validate Cloudflare-prefetched API responses keyed by park and facility."""
+    if not raw.strip():
+        return None
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise MonitorError("Cloudflare availability payload is invalid JSON.") from exc
+    if not isinstance(payload, dict) or payload.get("schema_version") != 1:
+        raise MonitorError("Cloudflare availability payload has an unsupported schema.")
+    if payload.get("visit_date") != config.visit_date.isoformat():
+        raise MonitorError("Cloudflare availability payload date does not match the subscription date.")
+    locations = payload.get("locations")
+    if not isinstance(locations, list):
+        raise MonitorError("Cloudflare availability payload is missing locations.")
+    indexed: dict[tuple[str, str], dict[str, Any]] = {}
+    for entry in locations:
+        if not isinstance(entry, dict):
+            raise MonitorError("Cloudflare availability payload contains an invalid location.")
+        key = (str(entry.get("park_id", "")), str(entry.get("facility", "")))
+        if not all(key) or key in indexed:
+            raise MonitorError("Cloudflare availability payload contains an invalid or duplicate key.")
+        indexed[key] = entry
+    return indexed
 
 
 def summarize_results(results: list[dict[str, Any]]) -> tuple[str, int]:
@@ -534,30 +565,63 @@ def main() -> int:
         state_path = os.getenv("BCPARKS_STATE_FILE", DEFAULT_STATE_PATH)
         state = load_state(state_path)
         state_changed = prune_state(state, config)
+        prefetched = load_prefetched_results(os.getenv("BCPARKS_PREFETCHED_RESULTS", ""), config)
 
         by_park: dict[str, list[Subscription]] = {}
         for subscription in config.subscriptions:
             by_park.setdefault(subscription.park_id, []).append(subscription)
 
         results: list[dict[str, Any]] = []
-        for park_id, subscriptions in by_park.items():
-            try:
-                facility_query = urlencode({"park": park_id, "facilities": "true"})
-                facilities = fetch_json(f"{API_BASE}/facility?{facility_query}")
-            except MonitorError as exc:
-                for subscription in subscriptions:
-                    results.append({"label": subscription.label, "status": "error", "error": str(exc)})
-                continue
-
-            for subscription in subscriptions:
+        if prefetched is not None:
+            for subscription in config.subscriptions:
+                entry = prefetched.get((subscription.park_id, subscription.facility))
+                if entry is None:
+                    results.append({
+                        "label": subscription.label,
+                        "status": "error",
+                        "error": "Cloudflare payload omitted this configured location.",
+                    })
+                    continue
+                if entry.get("error"):
+                    results.append({
+                        "label": subscription.label,
+                        "status": "error",
+                        "error": f"Cloudflare prefetch failed: {entry['error']}",
+                    })
+                    continue
                 try:
                     result = process_subscription(
-                        subscription, config, facilities, now, force_check, state
+                        subscription,
+                        config,
+                        entry.get("facilities"),
+                        now,
+                        force_check,
+                        state,
+                        entry.get("reservation"),
                     )
                     state_changed = bool(result.pop("_state_changed", False)) or state_changed
                     results.append(result)
                 except MonitorError as exc:
                     results.append({"label": subscription.label, "status": "error", "error": str(exc)})
+        else:
+            for park_id, subscriptions in by_park.items():
+                try:
+                    facility_query = urlencode({"park": park_id, "facilities": "true"})
+                    facilities = fetch_json(f"{API_BASE}/facility?{facility_query}")
+                except MonitorError as exc:
+                    for subscription in subscriptions:
+                        results.append({"label": subscription.label, "status": "error", "error": str(exc)})
+                    continue
+
+                for subscription in subscriptions:
+                    try:
+                        result = process_subscription(
+                            subscription, config, facilities, now, force_check, state
+                        )
+                        state_changed = bool(result.pop("_state_changed", False)) or state_changed
+                        results.append(result)
+                    except MonitorError as exc:
+                        results.append({"label": subscription.label, "status": "error", "error": str(exc)})
 
         if state_changed:
             save_state(state_path, state)

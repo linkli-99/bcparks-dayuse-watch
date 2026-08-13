@@ -178,6 +178,62 @@ class MonitorTests(unittest.TestCase):
         self.assertFalse(monitor.monitoring_has_expired(config, before))
         self.assertTrue(monitor.monitoring_has_expired(config, after))
 
+    def test_prefetched_results_are_validated_and_indexed(self):
+        config = monitor.MonitorConfig(
+            date(2026, 8, 15),
+            time(23, 59),
+            (monitor.Subscription("Rubble", "0007", "Rubble Creek", "DAY"),),
+        )
+        payload = json.dumps({
+            "schema_version": 1,
+            "visit_date": "2026-08-15",
+            "locations": [{
+                "park_id": "0007",
+                "facility": "Rubble Creek",
+                "facilities": [],
+                "reservation": {},
+            }],
+        })
+        indexed = monitor.load_prefetched_results(payload, config)
+        self.assertIn(("0007", "Rubble Creek"), indexed)
+
+    def test_prefetched_results_reject_wrong_date(self):
+        config = monitor.MonitorConfig(
+            date(2026, 8, 15),
+            time(23, 59),
+            (monitor.Subscription("Rubble", "0007", "Rubble Creek", "DAY"),),
+        )
+        payload = json.dumps({"schema_version": 1, "visit_date": "2026-08-16", "locations": []})
+        with self.assertRaisesRegex(monitor.MonitorError, "date does not match"):
+            monitor.load_prefetched_results(payload, config)
+
+    def test_process_subscription_uses_prefetched_reservation_without_network(self):
+        subscription = monitor.Subscription("Rubble", "0007", "Rubble Creek", "DAY")
+        config = monitor.MonitorConfig(date(2026, 8, 15), time(23, 59), (subscription,))
+        facilities = [{
+            "name": "Rubble Creek",
+            "visible": True,
+            "status": {"state": "open"},
+            "bookingTimes": {"DAY": True},
+            "bookingDays": {str(day): True for day in range(1, 8)},
+            "bookableHolidays": {},
+            "bookingDaysAhead": 2,
+            "bookingOpeningHour": 7,
+        }]
+        reservation = {"2026-08-15": {"DAY": {"capacity": "Full", "max": 0}}}
+        with patch.object(monitor, "fetch_json") as fetch:
+            result = monitor.process_subscription(
+                subscription,
+                config,
+                facilities,
+                datetime(2026, 8, 13, 8, 0, tzinfo=monitor.PACIFIC),
+                False,
+                {"notified": {}},
+                reservation,
+            )
+        fetch.assert_not_called()
+        self.assertEqual(result["status"], "full")
+
     def test_ntfy_publish_uses_post_without_exposing_topic(self):
         captured = {}
 
