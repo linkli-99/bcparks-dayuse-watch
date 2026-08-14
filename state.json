@@ -1,3 +1,8 @@
 {
-  "notified": {}
+  "notified": {
+    "2026-08-15|0007|Rubble Creek|DAY": {
+      "label": "Garibaldi - Rubble Creek parking",
+      "notified_at": "2026-08-13T20:04:30.608206-07:00"
+    }
+  }
 }
